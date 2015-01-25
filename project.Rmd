@@ -1,0 +1,98 @@
+Practical Machine Learning - Course Project
+========================================================
+
+# Introduction
+Human Activity Recognition - **HAR** - has emerged as a key research area in the last several years and is gaining increasing attention by the pervasive computing research community, especially for the development of context-aware systems. There are many potential applications for HAR, like: elderly monitoring, life log systems for monitoring energy expenditure and for supporting weight-loss programs, and digital assistants for weight lifting exercises.
+
+# Project Description
+Using devices such as *Jawbone Up*, *Nike FuelBand*, and *Fitbit* it is now possible to collect a large amount of data about personal activity relatively inexpensively. These types of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how *much* of a particular activity they do, but they rarely quantify how *well they do it*. In this project, the goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: [http://groupware.les.inf.puc-rio.br/har](http://groupware.les.inf.puc-rio.br/har) (see the section on the Weight Lifting Exercise Dataset).
+
+This project uses the [Weight Lifting Exercises Dataset](http://groupware.les.inf.puc-rio.br/static/WLE/WearableComputing_weight_lifting_exercises_biceps_curl_variations.csv).
+
+# Data
+The training data for this project are available here: 
+
+[https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv)
+
+The test data are available here: 
+
+[https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv)
+
+# Analysis and Model Fitting
+```{r}
+library(caret)
+# read training dataset
+data <- read.csv("pml-training.csv")
+# for reproducibility
+set.seed(12345)
+# subset dataset into training and test partitions
+inTrain <- createDataPartition(y=data$classe, p=0.60, list=FALSE)
+training <- data[inTrain,]
+testing <- data[-inTrain,]
+dim(training); dim(testing)
+```
+The first step is to analyze the data for missing values:
+```{r}
+# define function to show % NAs in each feature (column)
+get.NA <- function(df) sapply(df, function(x) sum(is.na(x)) / length(x))
+f.NA <- get.NA(training)
+table(f.NA)
+```
+Since almost 98% of the values are NA for some features, data imputation is not practical nor statistically valid. Therefore, I will remove these features from the dataset so they will not be part of my prediction model.
+```{r}
+training <- training[, -c(which(f.NA != 0))]
+dim(training)
+```
+Next, I look at variables with near zero variation, because they will not be useful for prediction.
+```{r}
+f.nzv <- nearZeroVar(training, saveMetrics=TRUE)
+f.nzv
+```
+```{r}
+# Remove near zero variation features
+training <- training[, -c(which(f.nzv$nzv == TRUE))]
+dim(training)
+# Remove other irrelevant features such as timestamp, etc.
+f.omit = 1:7
+training <- training[, -c(f.omit)]
+dim(training)
+```
+I graphed all of the remaining predictor variables against the **classe** variable (there is not room to include all of those graphs in this report), but there were no obvious relationships. I did not use linear regression, because **classe** is not a continuous variable. I chose Random Forest because Random Forest models generally perform well on non-linear data.
+
+Next, I use Random Forest to predict the **classe** output from all of the remaining variables:
+```{r}
+modelFit <- train(classe ~ ., data=training, method="rf")
+modelFit
+```
+### Cross Validation and Out of Sample Error
+The model output shows that the **caret** package causes the Random Forest algorithm to use 25 bootstrap samples for cross-validation purposes. The Random Forest model achieved the best accuracy by randomly sampling 26 variables for each tree. The out of sample error is expected to be about 1% (the cross-validated model was 98.6% accurate)
+
+Next, I compute the accuracy of the Random Forest predictor on the testing portion of the dataset.
+```{r}
+predictions <- predict(modelFit, testing)
+correct <- predictions==testing$classe
+mean(correct)
+```
+It shows that the Random Forest predictor was over 99% accurate on the testing data, which is consistent with the out of sample error estimate above. The confusion matrix is shown below:
+```{r}
+confusionMatrix(predictions, testing$classe)
+```
+I also show below the most important predictor variables:
+```{r}
+varImp(modelFit)
+```
+The remaining step is to run the Random Forest predictor on the validation dataset:
+```{r}
+# read validation dataset
+validation <- read.csv("pml-testing.csv")
+predictions <- predict(modelFit, validation)
+predictions
+```
+
+As a final check, I plotted the most important variable **yaw_belt** against the output variable **classe** for the training dataset, just to make sure that I did not overlook an obvious relationship between **yaw_belt** and **classe**:
+```{r}
+qplot(training$yaw_belt, training$classe, main="Most Important Predictor")
+```
+
+# References
+Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. [Qualitative Activity Recognition of Weight Lifting Exercises](http://groupware.les.inf.puc-rio.br/work.jsf?p1=11201). Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013. 
